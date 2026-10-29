@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>Unit 5</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #0d0d0d;
+      color: #fff;
+      font-family: system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #viewer-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+    }
+
+    .pdf-page-canvas {
+      position: absolute;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      transition: opacity 0.3s ease-in-out;
+      opacity: 0;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .pdf-page-canvas.zoomed {
+      max-width: none !important;
+      max-height: none !important;
+      position: relative !important;
+    }
+
+    .pdf-page-canvas.active {
+      opacity: 1;
+      z-index: 2;
+    }
+
+    .pdf-page-canvas.inactive {
+      opacity: 0;
+      z-index: 1;
+      display: none;
+    }
+
+    #start-screen {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 10, 12, 0.92);
+      backdrop-filter: blur(20px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .manual-card {
+      background: rgba(24, 24, 27, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 24px;
+      padding: 40px 32px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8);
+      text-align: center;
+    }
+
+    .manual-card h1 {
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+
+    .manual-card p.subtitle {
+      color: #a1a1aa;
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      text-align: left;
+      margin-bottom: 32px;
+      max-height: 50vh;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(39, 39, 42, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 10px 14px;
+      border-radius: 14px;
+    }
+
+    .control-icon-badge {
+      background: #27272a;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      flex-shrink: 0;
+      color: #38bdf8;
+    }
+
+    .control-desc {
+      font-size: 13px;
+      color: #d4d4d8;
+      line-height: 1.4;
+    }
+
+    .control-desc strong {
+      color: #fff;
+      display: block;
+      margin-bottom: 1px;
+    }
+
+    #btn-start {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      width: 100%;
+      padding: 14px;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    #btn-start:hover {
+      background: #1d4ed8;
+    }
+
+    #toolbar {
+      position: fixed;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(24, 24, 27, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 10px 6px;
+      border-radius: 9999px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      touch-action: none;
+      user-select: none;
+      cursor: grab;
+    }
+
+    #toolbar:active {
+      cursor: grabbing;
+    }
+
+    .drag-handle {
+      color: #a1a1aa;
+      font-size: 15px;
+      padding: 0 4px;
+      cursor: grab;
+      letter-spacing: -1px;
+    }
+
+    #toolbar button {
+      background: #27272a;
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    #toolbar button:hover {
+      background: #3f3f46;
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    #toolbar button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    #page-counter {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 0 4px;
+    }
+
+    .page-badge {
+      background: #27272a;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      min-width: 32px;
+      height: 28px;
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+
+    #page-total {
+      color: #a1a1aa;
+      background: rgba(39, 39, 42, 0.6);
+    }
+
+    .page-divider {
+      color: #71717a;
+      font-size: 12px;
+    }
+
+    #toolbar.vertical {
+      flex-direction: column;
+      bottom: auto;
+      right: auto;
+      top: 50%;
+      left: 16px;
+      transform: translateY(-50%);
+      max-height: 90vh;
+    }
+
+    #toolbar.vertical #page-counter {
+      flex-direction: column;
+      gap: 4px;
+      margin: 4px 0;
+    }
+
+    #toolbar.vertical .page-divider {
+      display: none;
+    }
+
+    #toolbar.vertical .page-badge {
+      width: 36px;
+    }
+
+    #toolbar.horizontal {
+      flex-direction: row;
+      top: auto;
+      right: auto;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 10px;
+      max-width: 95vw;
+    }
+
+    #toolbar.horizontal #page-counter {
+      flex-direction: row;
+      gap: 4px;
+      margin: 0 4px;
+    }
+
+    #toolbar.horizontal .page-divider {
+      display: inline;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="start-screen">
+    <div class="manual-card">
+      <h1>PDF Viewer Guide</h1>
+      <p class="subtitle">Quick overview of navigation & control options</p>
+      
+      <div class="controls-grid">
+        <div class="control-row">
+          <div class="control-icon-badge">↕</div>
+          <div class="control-desc">
+            <strong>Layout Toggle</strong>
+            Switch seamlessly between vertical (left) and horizontal (bottom) toolbars.
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-icon-badge">🔄</div>
+          <div class="control-desc">
+            <strong>Rotate Document</strong>
+            Rotate your document orientation 90 degrees clockwise.
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-icon-badge">➕</div>
+          <div class="control-desc">
+            <strong>Zoom In</strong>
+            Scale up the viewing size of your document pages.
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-icon-badge">➖</div>
+          <div class="control-desc">
+            <strong>Zoom Out</strong>
+            Scale down the viewing size of your document pages.
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-icon-badge">🔍</div>
+          <div class="control-desc">
+            <strong>Reset Zoom</strong>
+            Restore original page size fit instantly.
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-icon-badge">⛶</div>
+          <div class="control-desc">
+            <strong>Fullscreen</strong>
+            Toggle immersive full browser display mode.
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-icon-badge">◀ ▶</div>
+          <div class="control-desc">
+            <strong>Page Navigation</strong>
+            Flip pages manually or use keyboard arrow keys.
+          </div>
+        </div>
+      </div>
+
+      <button id="btn-start">Start Exploring</button>
+    </div>
+  </div>
+
+  <div id="viewer-container">
+    <canvas id="canvas-a" class="pdf-page-canvas active"></canvas>
+    <canvas id="canvas-b" class="pdf-page-canvas inactive"></canvas>
+  </div>
+
+  <div id="toolbar" class="vertical">
+    <span class="drag-handle" title="Drag to move">⋮⋮</span>
+    
+    <button id="btn-rotate" disabled title="Rotate Page">🔄</button>
+    <button id="btn-zoom-in" disabled title="Zoom In">➕</button>
+    <button id="btn-zoom-out" disabled title="Zoom Out">➖</button>
+    <button id="btn-zoom-reset" disabled title="Reset Zoom">🔍</button>
+    <button id="btn-layout" title="Toggle Orientation">↕</button>
+    <button id="btn-fullscreen" title="Toggle Fullscreen">⛶</button>
+
+    <div id="page-counter">
+      <span id="page-curr" class="page-badge" title="Current Page">0</span>
+      <span class="page-divider">/</span>
+      <span id="page-total" class="page-badge" title="Total Pages">0</span>
+    </div>
+
+    <button id="btn-prev" disabled title="Previous Page">◀</button>
+    <button id="btn-next" disabled title="Next Page">▶</button>
+  </div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    const DEFAULT_PDF_URL = 'Unit_5.pdf';
+
+    let pdfDoc = null;
+    let pageNum = 1;
+    let rotation = 0;
+    let zoomMultiplier = 1.0;
+    let isRendering = false;
+    let activeCanvasId = 'canvas-a';
+
+    const canvasA = document.getElementById('canvas-a');
+    const canvasB = document.getElementById('canvas-b');
+    const pageCurr = document.getElementById('page-curr');
+    const pageTotal = document.getElementById('page-total');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const btnRotate = document.getElementById('btn-rotate');
+    const btnZoomIn = document.getElementById('btn-zoom-in');
+    const btnZoomOut = document.getElementById('btn-zoom-out');
+    const btnZoomReset = document.getElementById('btn-zoom-reset');
+    const btnLayout = document.getElementById('btn-layout');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
+    const toolbar = document.getElementById('toolbar');
+    const viewerContainer = document.getElementById('viewer-container');
+    const startScreen = document.getElementById('start-screen');
+    const btnStart = document.getElementById('btn-start');
+
+    let isDragging = false;
+    let currentX = 0, currentY = 0, initialX = 0, initialY = 0;
+    let xOffset = 0, yOffset = 0;
+
+    toolbar.addEventListener('mousedown', dragStart);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', dragEnd);
+
+    toolbar.addEventListener('touchstart', dragStart, { passive: false });
+    document.addEventListener('touchmove', drag, { passive: false });
+    document.addEventListener('touchend', dragEnd);
+
+    function dragStart(e) {
+      if (['BUTTON', 'LABEL', 'INPUT'].includes(e.target.tagName)) return;
+      const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
+      const clientY = e.type === 'touchstart' ? e.touches[0].clientY : e.clientY;
+      initialX = clientX - xOffset;
+      initialY = clientY - yOffset;
+      isDragging = true;
+    }
+
+    function drag(e) {
+      if (!isDragging) return;
+      e.preventDefault();
+      const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
+      const clientY = e.type === 'touchmove' ? e.touches[0].clientY : e.clientY;
+      currentX = clientX - initialX;
+      currentY = clientY - initialY;
+      xOffset = currentX;
+      yOffset = currentY;
+
+      const isVertical = toolbar.classList.contains('vertical');
+      if (isVertical) {
+        toolbar.style.transform = `translate(${currentX}px, calc(-50% + ${currentY}px))`;
+      } else {
+        toolbar.style.transform = `translate(calc(-50% + ${currentX}px), ${currentY}px)`;
+      }
+    }
+
+    function dragEnd() {
+      initialX = currentX;
+      initialY = currentY;
+      isDragging = false;
+    }
+
+    btnLayout.addEventListener('click', () => {
+      toolbar.classList.toggle('vertical');
+      toolbar.classList.toggle('horizontal');
+      xOffset = 0; yOffset = 0; currentX = 0; currentY = 0;
+      toolbar.style.transform = '';
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      btnFullscreen.textContent = document.fullscreenElement ? '✕' : '⛶';
+    });
+
+    btnStart.addEventListener('click', () => {
+      startScreen.style.opacity = '0';
+      startScreen.style.transition = 'opacity 0.3s ease';
+      setTimeout(() => {
+        startScreen.style.display = 'none';
+      }, 300);
+
+      if (!pdfDoc) {
+        loadPDF(DEFAULT_PDF_URL);
+      }
+    });
+
+    function loadPDF(url) {
+      pdfjsLib.getDocument(url).promise.then((pdf) => {
+        pdfDoc = pdf;
+        pageNum = 1;
+        rotation = 0;
+        zoomMultiplier = 1.0;
+        btnRotate.disabled = false;
+        btnZoomIn.disabled = false;
+        btnZoomOut.disabled = false;
+        btnZoomReset.disabled = false;
+        renderPage(pageNum);
+      }).catch((err) => {
+        console.error('PDF load error:', err);
+        alert('Failed to load PDF');
+      });
+    }
+
+    async function renderPage(num) {
+      if (!pdfDoc || isRendering) return;
+      isRendering = true;
+
+      const page = await pdfDoc.getPage(num);
+      const nextCanvas = activeCanvasId === 'canvas-a' ? canvasB : canvasA;
+      const currentCanvas = activeCanvasId === 'canvas-a' ? canvasA : canvasB;
+      const ctx = nextCanvas.getContext('2d');
+
+      const viewportUnscaled = page.getViewport({ scale: 1, rotation });
+      const fitScaleX = window.innerWidth / viewportUnscaled.width;
+      const fitScaleY = window.innerHeight / viewportUnscaled.height;
+      const baseScale = Math.min(fitScaleX, fitScaleY);
+      
+      const finalScale = baseScale * zoomMultiplier;
+      const viewport = page.getViewport({ scale: finalScale, rotation });
+      const outputScale = window.devicePixelRatio || 1;
+
+      nextCanvas.width = Math.floor(viewport.width * outputScale);
+      nextCanvas.height = Math.floor(viewport.height * outputScale);
+      nextCanvas.style.width = Math.floor(viewport.width) + "px";
+      nextCanvas.style.height = Math.floor(viewport.height) + "px";
+
+      if (zoomMultiplier > 1.05) {
+        nextCanvas.classList.add('zoomed');
+      } else {
+        nextCanvas.classList.remove('zoomed');
+      }
+
+      const renderContext = {
+        canvasContext: ctx,
+        transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+        viewport: viewport
+      };
+
+      await page.render(renderContext).promise;
+
+      nextCanvas.style.display = 'block';
+      nextCanvas.className = `pdf-page-canvas active ${zoomMultiplier > 1.05 ? 'zoomed' : ''}`;
+      currentCanvas.className = 'pdf-page-canvas inactive';
+      currentCanvas.style.display = 'none';
+      
+      activeCanvasId = nextCanvas.id;
+
+      pageCurr.textContent = num;
+      pageTotal.textContent = pdfDoc.numPages;
+
+      btnPrev.disabled = num <= 1;
+      btnNext.disabled = num >= pdfDoc.numPages;
+
+      isRendering = false;
+    }
+
+    function zoomIn() {
+      if (zoomMultiplier < 4.0) {
+        zoomMultiplier += 0.25;
+        renderPage(pageNum);
+      }
+    }
+
+    function zoomOut() {
+      if (zoomMultiplier > 0.5) {
+        zoomMultiplier -= 0.25;
+        renderPage(pageNum);
+      }
+    }
+
+    function resetZoom() {
+      zoomMultiplier = 1.0;
+      renderPage(pageNum);
+    }
+
+    btnZoomIn.addEventListener('click', zoomIn);
+    btnZoomOut.addEventListener('click', zoomOut);
+    btnZoomReset.addEventListener('click', resetZoom);
+
+    viewerContainer.addEventListener('wheel', (e) => {
+      if (e.ctrlKey && pdfDoc) {
+        e.preventDefault();
+        if (e.deltaY < 0) zoomIn();
+        else zoomOut();
+      }
+    }, { passive: false });
+
+    btnPrev.addEventListener('click', () => { if (pageNum > 1) renderPage(--pageNum); });
+    btnNext.addEventListener('click', () => { if (pdfDoc && pageNum < pdfDoc.numPages) renderPage(++pageNum); });
+    btnRotate.addEventListener('click', () => { rotation = (rotation + 90) % 360; renderPage(pageNum); });
+    
+    btnFullscreen.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        document.exitFullscreen();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (['ArrowRight', 'PageDown', ' '].includes(e.key) && pdfDoc && pageNum < pdfDoc.numPages) renderPage(++pageNum);
+      if (['ArrowLeft', 'PageUp'].includes(e.key) && pdfDoc && pageNum > 1) renderPage(--pageNum);
+    });
+
+    window.addEventListener('resize', () => { if (pdfDoc) renderPage(pageNum); });
+  </script>
+</body>
+</html>
